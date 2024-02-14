@@ -11,10 +11,11 @@ import argparse
 
 #hyperparameter
 
-TEST = False
-# TEST = True
+# TEST = False
+TEST = True
 
 len_epoch = 100
+len_epoch_test = 10
 Learning_rate = 1
 Batch_size = 32
 num_samples_subset = 500
@@ -22,6 +23,7 @@ num_samples_subset = 500
 NAME_FILE = "VG11_50000_100epoch_scheduler"
 
 SCHEDULER_ON = True
+VALIDATION_TEST_ON = False
 
 ## We set a seed manually so as to reproduce the results easily
 seed  = 2147483647
@@ -113,29 +115,6 @@ lrs = []
 
 
 
-def m_test (model):
-    model.eval()
-    correct = 0
-    total = 0
-
-    for batch_index, (inputs,labels) in enumerate(testloader):
-        
-        inputs,labels  = inputs.to(device),labels.to(device)
-
-        outputs = model(inputs)
-        outputs = outputs.to(device)
-
-        loss = criterion(outputs, labels)
-
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += predicted.eq(labels.data).cpu().sum()
-        acc += 100.*correct/total
-
-    return acc/len(testloader)
-
-
-
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
@@ -169,15 +148,14 @@ def infer_mixup(inputs,labels,correct,total,TEST):
 
     loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
-    _, predicted = torch.max(outputs.data, 1)
-    total += labels.size(0)
-    correct += (lam * predicted.eq(targets_a.data).cpu().sum().float()
-            + (1 - lam) * predicted.eq(targets_b.data).cpu().sum().float())
+    
     if TEST :
-        acc = 100.*correct/total
-        return loss,acc
-    else :
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (lam * predicted.eq(targets_a.data).cpu().sum().float() + (1 - lam) * predicted.eq(targets_b.data).cpu().sum().float())
         return loss,correct,total
+    else :
+        return loss
 
 
 
@@ -192,14 +170,15 @@ def infer_classic(inputs,labels,correct,total,TEST):
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += predicted.eq(labels.data).cpu().sum()
-        acc = 100.*correct/total
-        return loss,acc
+
+        return loss,correct,total
     else:
         return loss
 
 
 
 def m_train():
+    print("Enter in training mode")
     global list_train
     global list_valid
     
@@ -209,9 +188,6 @@ def m_train():
 
         # Training set initialization
         running_loss = 0.0
-        running_loss_valid = 0.0
-        correct = 0
-        total = 0
 
         model.train()
         TEST = False
@@ -225,7 +201,7 @@ def m_train():
                 if reset_lr:
                     optimizer.param_groups[0]["lr"] = 0.1
                     reset_lr = False
-                loss,correct,total = infer_mixup(inputs,labels,correct,total,TEST)
+                loss = infer_mixup(inputs,labels,correct,total,TEST)
 
             optimizer.zero_grad()
             loss.backward()
@@ -233,6 +209,10 @@ def m_train():
 
             # statistics
             running_loss += loss.item()
+        
+        #get and print loss
+        print('[%d, %5d] loss: %.3f' % (epoch + 1, batch_index + 1, running_loss / len(trainloader_subset)))
+        list_train = np.append(list_train,running_loss/len(trainloader_subset))
 
 
         #scheduler
@@ -242,39 +222,62 @@ def m_train():
             #print lr
             print("lrs = ",lrs[-1])
 
-        
-        #validation test
-        running_acc_valid  = 0
-        running_loss_valid  = 0
-        correct = 0
-        total = 0
+        if VALIDATION_TEST_ON:
+            #validation test
+            running_acc_valid  = 0
+            running_loss_valid  = 0
+            correct = 0
+            total = 0
 
-        model.eval()
-        TEST = True
+            model.eval()
+            TEST = True
 
-        #validation infer
-        for batch_index, (inputs,labels) in enumerate(testloader):
-            if epoch < len_epoch/2 :
-                loss_valid,acc_valid = infer_classic(inputs,labels,correct,total,TEST)
-            else :
-                loss_valid,acc_valid = infer_mixup(inputs,labels,correct,total,TEST)
+            #validation infer
+            for batch_index, (inputs,labels) in enumerate(testloader):
+                if epoch < len_epoch/2 :
+                    loss,correct,total = infer_classic(inputs,labels,correct,total,TEST)
+                    
+                else :
+                    loss_valid,correct,total = infer_mixup(inputs,labels,correct,total,TEST)
+                
+                #accumulation 
+                running_loss_valid += loss_valid.item()
+ 
             
-            #accumulation 
-            running_acc_valid  += acc_valid
-            running_loss_valid += loss_valid.item()     
+            #save stat 
+            list_valid = np.append(list_valid,100.*correct/total) #save accurancy batch
+            list_valid = np.append(list_valid,running_loss_valid/len(testloader))
+            #print acc
+            print('[%d, %5d] acc_valid: %.3f' % (epoch + 1, batch_index + 1, 100.*correct/total)) 
+    
 
-        #print stat loss
-        print('[%d, %5d] loss: %.3f' % (epoch + 1, batch_index + 1, running_loss / len(trainloader_subset)))
-        list_train = np.append(list_train,running_loss/len(trainloader_subset))
+def m_test (model):
+    print("Entering test mode")
+    model.eval()
+    TEST = True
+    mean_batch_acc = 0
+    mean_batch_loss = 0
+    for epoch in range(len_epoch_test):
+        #initialization test
+        correct = 0
+        total = 0   
+        running_acc  = 0
+        running_loss  = 0    
+        #infer test    
+        for batch_index, (inputs,labels) in enumerate(testloader):
 
-        #print stat acc
-        print('[%d, %5d] acc_valid: %.3f' % (epoch + 1, batch_index + 1, running_acc_valid / len(testloader))) 
-        list_valid = np.append(list_valid,running_loss_valid/len(trainloader_subset))
-        list_valid = np.append(list_valid,running_acc_valid/len(testloader))
+            loss,correct,total = infer_classic(inputs,labels,correct,total,TEST)
+   
+            running_loss+= loss.item()   
+        #calcul mean batch
         
+        mean_batch_loss += running_loss/len(testloader)
+        mean_batch_acc += 100.*correct/total
         
-        
+        print("Still",len_epoch_test-epoch,"epoch(s) to proceed.")
 
+    
+    return mean_batch_acc/len_epoch_test,mean_batch_loss/len_epoch_test
 
 
 
@@ -292,6 +295,6 @@ if not TEST:
 
 if TEST :
     model = torch.load('/homes/e21jamet/Documents/efficient-deep-learning/models_cifar100/'+ NAME_FILE +'.pth')
-    acc = m_test(model)
+    acc,loss = m_test(model)
     print('acc =',acc.numpy())
 
