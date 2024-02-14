@@ -15,20 +15,19 @@ TEST = False
 # TEST = True
 
 len_epoch = 100
-len_epoch_test = 10
+len_epoch_test = 100
 
 Learning_rate = 1
 Batch_size = 32
 
-num_samples_subset = 500
+num_samples_subset = 50000
 
 NAME_FILE = "VG11_50000_100epoch_scheduler"
 
 SCHEDULER_ON = True
-VALIDATION_TEST_ON = False
 
 VALIDATION_CYCLE_ON = True
-Valid_cycle = 5 #how many epoch we want to go trought witouth using the validation test
+Valid_cycle = 4 #how many epoch we want to go trought witouth using the validation test
 
 ## We set a seed manually so as to reproduce the results easily
 seed  = 2147483647
@@ -186,7 +185,7 @@ def m_train():
     print("Enter in training mode")
     global list_train
     global list_valid
-    
+    VALIDATION_TEST_ON = False
     reset_lr = SCHEDULER_ON
 
     for epoch in range(len_epoch):
@@ -197,7 +196,7 @@ def m_train():
         total = 0
         model.train()
         TEST = False
-
+        
         #training set infer
         for batch_index, (inputs,labels) in enumerate(trainloader_subset):
             
@@ -228,7 +227,7 @@ def m_train():
             #print lr
             print("lrs = ",lrs[-1])
         
-        if VALIDATION_CYCLE_ON and Valid_cycle == epoch:
+        if VALIDATION_CYCLE_ON and epoch % Valid_cycle == 0:
             VALIDATION_TEST_ON = True
 
 
@@ -245,7 +244,7 @@ def m_train():
             #validation infer
             for batch_index, (inputs,labels) in enumerate(testloader):
                 if epoch < len_epoch/2 :
-                    loss,correct,total = infer_classic(inputs,labels,correct,total,TEST)
+                    loss_valid,correct,total = infer_classic(inputs,labels,correct,total,TEST)
                     
                 else :
                     loss_valid,correct,total = infer_mixup(inputs,labels,correct,total,TEST)
