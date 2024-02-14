@@ -11,19 +11,24 @@ import argparse
 
 #hyperparameter
 
-# TEST = False
-TEST = True
+TEST = False
+# TEST = True
 
 len_epoch = 100
 len_epoch_test = 10
+
 Learning_rate = 1
 Batch_size = 32
+
 num_samples_subset = 500
 
 NAME_FILE = "VG11_50000_100epoch_scheduler"
 
 SCHEDULER_ON = True
 VALIDATION_TEST_ON = False
+
+VALIDATION_CYCLE_ON = True
+Valid_cycle = 5 #how many epoch we want to go trought witouth using the validation test
 
 ## We set a seed manually so as to reproduce the results easily
 seed  = 2147483647
@@ -188,7 +193,8 @@ def m_train():
 
         # Training set initialization
         running_loss = 0.0
-
+        correct = 0
+        total = 0
         model.train()
         TEST = False
 
@@ -221,6 +227,10 @@ def m_train():
             scheduler.step(running_loss)
             #print lr
             print("lrs = ",lrs[-1])
+        
+        if VALIDATION_CYCLE_ON and Valid_cycle == epoch:
+            VALIDATION_TEST_ON = True
+
 
         if VALIDATION_TEST_ON:
             #validation test
@@ -249,6 +259,9 @@ def m_train():
             list_valid = np.append(list_valid,running_loss_valid/len(testloader))
             #print acc
             print('[%d, %5d] acc_valid: %.3f' % (epoch + 1, batch_index + 1, 100.*correct/total)) 
+
+            if VALIDATION_CYCLE_ON:
+                VALIDATION_TEST_ON = False
     
 
 def m_test (model):
