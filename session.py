@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 
 #hyperparameter
 
-NAME_FILE = "middle_mixup_sch_on_test"
+NAME_FILE = "sch_off_mixup_off"
 
-SAVE_TESTING = "85"
+SAVE_TESTING = "final"
 
 OUTPUT_DIRECTORY = os.path.join(os.path.dirname(os.path.realpath(__file__)), NAME_FILE)
 
@@ -34,9 +34,9 @@ num_samples_subset = 50000
 
 DATA_NOT_DOWNLOAD = False
 
-SCHEDULER_ON = True
+SCHEDULER_ON = False
 
-MIXUP_ON = True
+MIXUP_ON = False
 Precision_mixup = 0.01
 
 
@@ -280,11 +280,9 @@ def m_train(OUTPUT_DIRECTORY):
 
             #validation infer
             for batch_index, (inputs,labels) in enumerate(testloader):
-                if epoch < len_epoch/2 :
-                    loss_valid,correct,total = infer_classic(inputs,labels,correct,total,TEST)
+
+                loss_valid,correct,total = infer_classic(inputs,labels,correct,total,TEST)
                     
-                else :
-                    loss_valid,correct,total = infer_mixup(inputs,labels,correct,total,TEST)
                 
                 #accumulation 
                 running_loss_valid += loss_valid.item()
