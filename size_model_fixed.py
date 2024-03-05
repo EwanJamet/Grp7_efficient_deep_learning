@@ -32,5 +32,4 @@ c = count_parameters(model)
 
 print(c)
 
-print(
-    "Sparsity in fc3.weight: {:.2f}%".format((100. * s)/ c))
+print("Sparsity in model: {:.2f}%".format((100. * s)/ c))
