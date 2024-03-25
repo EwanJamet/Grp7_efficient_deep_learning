@@ -5,6 +5,8 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 import densenet_fact as fact
 import densenet as dens
+import vgg_fact as vgg_fact
+import vgg_group as vgg_group
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
@@ -19,7 +21,7 @@ import matplotlib.pyplot as plt
 
 #hyperparameter
 NAME_TUTOR = "tutor.pth"
-NAME_FILE = "densenet_max_fact_dist"
+NAME_FILE = "vgg11_group"
 
 SAVE_TESTING = "fine_tuning"
 
@@ -27,9 +29,9 @@ OUTPUT_DIRECTORY = os.path.join(os.path.dirname(os.path.realpath(__file__)), NAM
 
 TEST = False
 
-len_epoch = 20
+len_epoch = 100
 
-Learning_rate = 0.0001
+Learning_rate = 0.01
 Batch_size = 32
 
 num_samples_subset = 50000
@@ -37,18 +39,18 @@ num_samples_subset = 50000
 DATA_NOT_DOWNLOAD = False
 
 TUTOR = True
-TEMP = 3
+TEMP = 4
 
 SCHEDULER_ON = True
 
-MIXUP_ON = False
+MIXUP_ON = True
 MIXUP_SAMPLE = 50 #nombre d'epoch sur lesquelles faire le mixup
 
 PRUNING_TEST = False
 
 GLOBAL_PRUNING_TEST = False
 
-FINE_TUNING_PRUNING = True
+FINE_TUNING_PRUNING = False
 PRUNING_NBR_EPOCH = 15
 PRUNING_PERCENTAGE = 0.1
 
@@ -147,7 +149,7 @@ data = trainloader_subset
 
 criterion = nn.CrossEntropyLoss()
 
-model = fact.densenet_mini()
+model = vgg_group.VGG('VGG11')
 model = model.half()
 model = model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,

@@ -1,12 +1,16 @@
 import os
 import torch
 import torch.nn as nn
-import densenet_fact as fact
+import densenet_fact as dens_fact
+import densenet_cours as dens
+import vgg as vgg
+import vgg_fact as vgg_fact
+import vgg_group as vgg_group
 
 our_quant=16
 quant_factors={1:32,8:4,16:2,32:1}
 quant_factor= quant_factors[our_quant]
-sparsity=0.
+sparsity=0.1
 
 def count_conv2d(m, x, y):
     x = x[0] # remove tuple
@@ -27,7 +31,7 @@ def count_conv2d(m, x, y):
     total_ops = num_out_elements * ops
 
     #Nice Formatting
-    print("{:<10}: S_c={:<4}, F_in={:<4}, F_out={:<4}, P={:<5}, params={:<10}, operations={:<20}".format("Conv2d",sh,fin,fout,x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
+    # print("{:<10}: S_c={:<4}, F_in={:<4}, F_out={:<4}, P={:<5}, params={:<10}, operations={:<20}".format("Conv2d",sh,fin,fout,x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
     # print("Conv2d: S_c={}, F_in={}, F_out={}, P={}, params={}, operations={}".format(sh,fin,fout,x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
     # incase same conv is used multiple times
     m.total_ops += torch.Tensor([int(total_ops)])
@@ -43,7 +47,7 @@ def count_bn2d(m, x, y):
 
     m.total_ops += torch.Tensor([int(total_ops)])
     #Nice Formatting
-    print("{:<10}: S_c={:<4}, F_in={:<4}, F_out={:<4}, P={:<5}, params={:<10}, operations={:<20}".format("Batch norm",'x',x.size(1),'x',x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
+    # print("{:<10}: S_c={:<4}, F_in={:<4}, F_out={:<4}, P={:<5}, params={:<10}, operations={:<20}".format("Batch norm",'x',x.size(1),'x',x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
     # print("Batch norm: F_in={} P={}, params={}, operations={}".format(x.size(1),x.size()[2:].numel(),int(m.total_params.item()),int(total_ops)))
 
 
@@ -54,7 +58,7 @@ def count_relu(m, x, y):
     total_ops = nelements
 
     m.total_ops += torch.Tensor([int(total_ops)])
-    print("ReLU: F_in={} P={}, params={}, operations={}".format(x.size(1),x.size()[2:].numel(),0,int(total_ops)))
+    # print("ReLU: F_in={} P={}, params={}, operations={}".format(x.size(1),x.size()[2:].numel(),0,int(total_ops)))
 
 
 
@@ -67,7 +71,7 @@ def count_avgpool(m, x, y):
     total_ops = kernel_ops * num_elements
 
     m.total_ops += torch.Tensor([int(total_ops)])
-    print("AvgPool: S={}, F_in={}, P={}, params={}, operations={}".format(m.kernel_size,x.size(1),x.size()[2:].numel(),0,int(total_ops)))
+    # print("AvgPool: S={}, F_in={}, P={}, params={}, operations={}".format(m.kernel_size,x.size(1),x.size()[2:].numel(),0,int(total_ops)))
 
 def count_linear(m, x, y):
     # per output element
@@ -75,7 +79,7 @@ def count_linear(m, x, y):
     total_add = m.in_features - 1
     num_elements = y.numel()
     total_ops = (total_mul + total_add) * num_elements
-    print("Linear: F_in={}, F_out={}, params={}, operations={}".format(m.in_features,m.out_features,int(m.total_params.item()),int(total_ops)))
+    # print("Linear: F_in={}, F_out={}, params={}, operations={}".format(m.in_features,m.out_features,int(m.total_params.item()),int(total_ops)))
     m.total_ops += torch.Tensor([int(total_ops)])
 
 def count_sequential(m, x, y):
@@ -136,7 +140,7 @@ def main():
     # model_file = os.path.join(OUTPUT_DIRECTORY, "save_model/save_model_state_" + SAVE_TESTING + ".pth")
     # model = torch.load(model_file, map_location=torch.device('cpu'))
 
-    model = fact.densenet_petit()
+    model = vgg_fact.VGG('VGG11')
 
     flops, params = profile(model, (1,3,32,32))
     flops, params = flops.item(), params.item()

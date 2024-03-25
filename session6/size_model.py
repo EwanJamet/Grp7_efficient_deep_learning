@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import os
 
-SAVE_TESTING = "final"
-NAME_FILE = "densenet_mini_ref_fact"
+SAVE_TESTING = "prune"
+NAME_FILE = "densenet_max_fact_dist"
 OUTPUT_DIRECTORY  = os.path.join(os.path.dirname(os.path.realpath(__file__)), NAME_FILE)
 model_file = os.path.join(OUTPUT_DIRECTORY, "save_model/save_model_state_" + SAVE_TESTING + ".pth")
 
