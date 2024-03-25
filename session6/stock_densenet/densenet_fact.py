@@ -110,10 +110,7 @@ def densenet_cifar():
     return DenseNet(Bottleneck, [6,12,24,16], growth_rate=12)
 
 def densenet_mini():
-    return DenseNet(Bottleneck, [1,6,9,6], growth_rate=10)
-
-def densenet_petit():
-    return DenseNet(Bottleneck, [2,7,12,7], growth_rate=11)
+    return DenseNet(Bottleneck, [2,8,15,8], growth_rate=12)
 
 
 

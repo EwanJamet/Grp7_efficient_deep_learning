@@ -4,6 +4,7 @@ import torchvision.transforms as transforms
 import torch 
 from torch.utils.data.dataloader import DataLoader
 import densenet_fact as fact
+import densenet as dens
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
@@ -16,40 +17,42 @@ import time
 import matplotlib.pyplot as plt
 
 
-#################################   hyperparameter ###################################
+#hyperparameter
+NAME_TUTOR = "tutor.pth"
+NAME_FILE = "densenet_max_fact_dist"
 
-NAME_FILE = "densenet_tutor"
-
-SAVE_TESTING = "final"
+SAVE_TESTING = "fine_tuning"
 
 OUTPUT_DIRECTORY = os.path.join(os.path.dirname(os.path.realpath(__file__)), NAME_FILE)
 
 TEST = False
 
-############ VARIABLE ###########
+len_epoch = 20
 
-
-FINE_TUNING_PRUNING = False
-PRUNING_NBR_EPOCH = 9
-PRUNING_PERCENTAGE = 0.2
-
-len_epoch = 100
-
-Learning_rate = 0.01
+Learning_rate = 0.0001
 Batch_size = 32
 
 num_samples_subset = 50000
 
 DATA_NOT_DOWNLOAD = False
 
+TUTOR = True
+TEMP = 3
+
 SCHEDULER_ON = True
 
-MIXUP_ON = True # No Mixup when pruning !
-MIXUP_SAMPLE = 60 #nombre d'epoch sur lesquelles faire le mixup
+MIXUP_ON = False
+MIXUP_SAMPLE = 50 #nombre d'epoch sur lesquelles faire le mixup
 
 PRUNING_TEST = False
 
 GLOBAL_PRUNING_TEST = False
+
+FINE_TUNING_PRUNING = True
+PRUNING_NBR_EPOCH = 15
+PRUNING_PERCENTAGE = 0.1
+
+FINE_TUNING = False
 
 VALIDATION_CYCLE_ON = True
 Valid_cycle = 5 #how many epoch we want to go trought witouth using the validation test, and save the state too
@@ -60,8 +63,6 @@ Training_acc_cycle = Valid_cycle
 ## We set a seed manually so as to reproduce the results easily
 seed  = 2147483647
 
-#############################################################################################
-MIXUP_ON = not(FINE_TUNING_PRUNING) and MIXUP_ON # to ensure there are no mixup when pruning
 global list_train 
 global list_valid 
 list_train = np.array([])
@@ -74,7 +75,7 @@ use_cuda = torch.cuda.is_available()
 
 parser = argparse.ArgumentParser(description='PyTorch VGG Training')
 parser.add_argument('--lr', default=Learning_rate, type=float, help='learning rate')
-parser.add_argument('--model', default="densenet", type=str,
+parser.add_argument('--model', default="VGG16", type=str,
                     help='model type (default: ResNet18)')
 parser.add_argument('--name', default=NAME_FILE, type=str, help='name of run')
 parser.add_argument('--seed', default=seed, type=int, help='random seed')
@@ -137,11 +138,16 @@ trainloader_subset = DataLoader(c10train_subset,batch_size=32,shuffle=True)
 
 
 ########################################################## MODEL #########################################################
+if TUTOR:
+    model_tutor = dens.densenet169(False, False,device=device).half()
+    model_tutor = model_tutor.to(device)
+    model_tutor.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.realpath(__file__)), NAME_TUTOR)))
+
 data = trainloader_subset 
 
 criterion = nn.CrossEntropyLoss()
 
-model = fact.DenseNet161()
+model = fact.densenet_mini()
 model = model.half()
 model = model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
@@ -178,6 +184,8 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
+################################################### INFERENCE ############################################################
+
 def infer_mixup(inputs,labels,correct,total,TEST):
     
     inputs, labels = inputs.cuda(), labels.cuda()
@@ -185,6 +193,7 @@ def infer_mixup(inputs,labels,correct,total,TEST):
     inputs, targets_a, targets_b = map(Variable, (inputs,targets_a, targets_b))
 
     outputs = model(inputs)
+    
     loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
     
@@ -199,9 +208,31 @@ def infer_classic(inputs,labels,correct,total,TEST):
 
     inputs,labels  = inputs.to(device),labels.to(device)
     outputs = model(inputs)
-    
     outputs = outputs.to(device)
-    loss = criterion(outputs, labels)
+    if TUTOR and not TEST:
+        student_logits= outputs
+        with torch.no_grad():
+            teacher_logits = model_tutor(inputs)
+
+            #Soften the student logits by applying softmax first and log() second
+        soft_targets = nn.functional.softmax(teacher_logits / TEMP, dim=-1)
+        soft_prob = nn.functional.log_softmax(student_logits / TEMP, dim=-1)
+
+        # Calculate the soft targets loss. Scaled by T**2 as suggested by the authors of the paper "Distilling the knowledge in a neural network"
+        soft_targets_loss = torch.sum(soft_targets * (soft_targets.log() - soft_prob)) / soft_prob.size()[0] * (TEMP**2)
+
+        # Calculate the true label loss
+        label_loss = criterion(student_logits, labels)
+
+        # Weighted sum of the two losses
+        soft_target_loss_weight = 0.25
+        ce_loss_weight =0.75
+        loss = soft_target_loss_weight * soft_targets_loss + ce_loss_weight * label_loss
+        
+    else :
+        loss = criterion(outputs, labels)
+
+    
 
     if TEST:
         _, predicted = torch.max(outputs.data, 1)
@@ -270,6 +301,8 @@ def m_train(OUTPUT_DIRECTORY):
                 if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
                     prune.remove(module, "weight")
 
+
+
         #get and print loss
         print('[%d, %5d] loss: %.3f' % (epoch + 1, batch_index + 1, running_loss / len(trainloader_subset)))
         
@@ -306,9 +339,9 @@ def m_train(OUTPUT_DIRECTORY):
             #validation infer
             for batch_index, (inputs,labels) in enumerate(testloader):
                 inputs = inputs.half()
-
                 loss_valid,correct,total = infer_classic(inputs,labels,correct,total,TEST)
                     
+                
                 #accumulation 
                 running_loss_valid += loss_valid.item()
             
@@ -321,7 +354,7 @@ def m_train(OUTPUT_DIRECTORY):
             print('[%d, %5d] acc_valid: %.3f' % (epoch + 1, batch_index + 1, 100.*correct/total)) 
 
             #save state 
-            if list_valid_acc[-1] >= list_valid_acc[int(epoch/Valid_cycle)-1] and not(FINE_TUNING_PRUNING):
+            if list_valid_acc[-1] >= list_valid_acc[int(epoch/Valid_cycle)-1]:
                 torch.save(model, OUTPUT_DIRECTORY +'/save_model/save_model_state_best.pth')
             
             if VALIDATION_CYCLE_ON:
@@ -405,9 +438,9 @@ def m_save(time_execution,OUTPUT_DIRECTORY):
     np.save( OUTPUT_DIRECTORY + '/train_values.npy', list_train)
     np.save( OUTPUT_DIRECTORY + '/valid_values.npy', list_valid)
 
-####################################  TEST   ########################################
+
 def m_test (model, i=0):
-    print("------------------ Entering test mode -----------------------")
+    print("Entering test mode")
 
     if PRUNING_TEST : 
         print("---entering pruning---")
@@ -431,9 +464,8 @@ def m_test (model, i=0):
     running_loss  = 0    
     # infer test    
     for batch_index, (inputs,labels) in enumerate(testloader):
-        inputs = inputs.half()
         
-
+        inputs=inputs.half()
         loss,correct,total = infer_classic(inputs,labels,correct,total,TEST)
 
         running_loss+= loss.item() 
@@ -450,14 +482,18 @@ if TEST:
 
 
 elif FINE_TUNING_PRUNING:
-    print("--- Enter in prune mode ---")
+    print("---entering fine tuning pruning---")
     model = torch.load(OUTPUT_DIRECTORY + '/save_model/save_model_state_'+SAVE_TESTING+'.pth')
     m_train(OUTPUT_DIRECTORY)
     torch.save(model, OUTPUT_DIRECTORY +'/save_model/save_model_state_prune.pth')
-    print("--- Save prune mode complete ---")
 
+elif FINE_TUNING:
+    print("------------------- ENTER FINE TUNING --------------------------")
+    model = torch.load(OUTPUT_DIRECTORY + '/save_model/save_model_state_'+SAVE_TESTING+'.pth')
+    m_train(OUTPUT_DIRECTORY)
+    torch.save(model, OUTPUT_DIRECTORY +'/save_model/save_model_state_fine_tuning.pth')
 
-elif not TEST and not FINE_TUNING_PRUNING:
+elif not TEST and not FINE_TUNING_PRUNING and not FINE_TUNING:
 
     # check if the path already exist and create a new directory
     version = 0
